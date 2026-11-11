@@ -138,20 +138,9 @@ export default createRoute(async (c) => {
             <div class="order-1 lg:order-2 min-w-0">
               <HeroVisual
                 techIcons={techIcons}
-                cloudSize={700}
-                gradientIdPrefix="mobile-hero"
-                className="flex lg:hidden aspect-square w-full max-w-[700px] mx-auto"
-                bookWidthClass="w-[85%]"
-                cloudOffsetClass="-mt-12"
-                bookBottomClass="bottom-0"
-              />
-              <HeroVisual
-                techIcons={techIcons}
-                cloudSize={800}
-                gradientIdPrefix="desktop-hero"
-                className="hidden lg:flex aspect-square w-full max-w-[800px] mx-auto -mt-16"
-                bookWidthClass="w-[75%]"
-                bookBottomClass="bottom-0"
+                gradientIdPrefix="hero"
+                className="w-[min(100%,48svh)] lg:w-[min(100%,65svh)] lg:-translate-y-[6%]"
+                bookWidthClass="w-[85%] lg:w-[75%]"
               />
             </div>
           </div>
