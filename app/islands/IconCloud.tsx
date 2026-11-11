@@ -1,38 +1,138 @@
-import { useEffect, useRef, useState } from "hono/jsx";
-
-interface Icon {
-  x: number;
-  y: number;
-  z: number;
-  scale: number;
-  opacity: number;
-  id: number;
-}
+import { useEffect, useMemo, useRef, useState } from "hono/jsx";
 
 interface IconCloudProps {
   images: string[];
-  width?: number;
-  height?: number;
+}
+
+interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface Rotation {
+  x: number;
+  y: number;
+}
+
+interface TargetRotation extends Rotation {
+  startX: number;
+  startY: number;
+  startTime: number;
+  duration: number;
+}
+
+interface AnimationState {
+  rotation: Rotation;
+  pointer: { x: number; y: number };
+  drag: { x: number; y: number } | null;
+  target: TargetRotation | null;
+  loadedImages: (HTMLImageElement | null)[];
+  sprites: (HTMLCanvasElement | null)[];
+  spritePx: number;
+}
+
+// 大きさはすべて正方形の一辺に対する比率で決める。
+// px の固定値を混ぜると、表示サイズによって球とアイコンのバランスが変わってしまう。
+const SPHERE_RADIUS_RATIO = 0.35;
+const ICON_SIZE_RATIO = 0.16;
+const ICON_PADDING_RATIO = 0.1;
+
+// ポインタは中心からのずれを一辺に対する比率で持つ。操作前はこの値でゆっくり回す。
+const IDLE_POINTER = { x: 0.25, y: 0.25 };
+const MAX_POINTER_DISTANCE = Math.SQRT1_2;
+const BASE_SPEED = 0.003;
+const POINTER_SPEED = 0.01;
+const DRAG_SPEED = 0.002;
+
+// depth は -1（最奥）から 1（最前）
+function depthScale(depth: number): number {
+  return 0.8 + 0.35 * depth;
+}
+
+function depthOpacity(depth: number): number {
+  return Math.max(0.2, Math.min(1, 0.75 + depth));
 }
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
 
-function useResponsiveSize(baseWidth: number, baseHeight: number) {
+// 単位球面上に均等に並べる（フィボナッチ球）
+function fibonacciSphere(count: number): Vec3[] {
+  const offset = 2 / count;
+  const increment = Math.PI * (3 - Math.sqrt(5));
+
+  return Array.from({ length: count }, (_, i) => {
+    const y = i * offset - 1 + offset / 2;
+    const r = Math.sqrt(1 - y * y);
+    const phi = i * increment;
+    return { x: Math.cos(phi) * r, y, z: Math.sin(phi) * r };
+  });
+}
+
+function project(point: Vec3, rotation: Rotation) {
+  const cosX = Math.cos(rotation.x);
+  const sinX = Math.sin(rotation.x);
+  const cosY = Math.cos(rotation.y);
+  const sinY = Math.sin(rotation.y);
+
+  const x = point.x * cosY - point.z * sinY;
+  const depth = point.x * sinY + point.z * cosY;
+  const y = point.y * cosX + depth * sinX;
+
+  return { x, y, depth };
+}
+
+function createSprite(img: HTMLImageElement, px: number): HTMLCanvasElement {
+  const sprite = document.createElement("canvas");
+  sprite.width = px;
+  sprite.height = px;
+  const padding = px * ICON_PADDING_RATIO;
+  sprite.getContext("2d")?.drawImage(img, padding, padding, px - padding * 2, px - padding * 2);
+  return sprite;
+}
+
+/**
+ * 親要素の幅いっぱいの正方形に描画する。大きさは親要素側で決める。
+ */
+export default function IconCloud({ images }: IconCloudProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: baseWidth, height: baseHeight });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [view, setView] = useState({ size: 0, dpr: 1 });
+  const { size, dpr } = view;
+
+  // 毎フレーム書き換える値。再描画を起こさないよう、同じオブジェクトを直接書き換える。
+  const [state] = useState<AnimationState>(() => ({
+    rotation: { x: 0, y: 0 },
+    pointer: IDLE_POINTER,
+    drag: null,
+    target: null,
+    loadedImages: [],
+    sprites: [],
+    spritePx: 0,
+  }));
+
+  const points = useMemo(() => fibonacciSphere(images.length), [images.length]);
+
+  const radius = size * SPHERE_RADIUS_RATIO;
+  const iconSize = size * ICON_SIZE_RATIO;
+  // 最前面での表示サイズに合わせてラスタライズする
+  const spritePx = Math.ceil(iconSize * depthScale(1) * dpr);
+  state.spritePx = spritePx;
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const update = () => {
-      const w = container.clientWidth;
-      if (w > 0) {
-        const clamped = Math.min(w, baseWidth);
-        setSize({ width: clamped, height: clamped });
-      }
+      const nextSize = container.clientWidth;
+      // 非表示のあいだは前回の値を保つ
+      if (nextSize === 0) return;
+      const nextDpr = window.devicePixelRatio || 1;
+      setView((prev) =>
+        prev.size === nextSize && prev.dpr === nextDpr ? prev : { size: nextSize, dpr: nextDpr },
+      );
     };
 
     update();
@@ -40,320 +140,182 @@ function useResponsiveSize(baseWidth: number, baseHeight: number) {
     const ro = new ResizeObserver(update);
     ro.observe(container);
     return () => ro.disconnect();
-  }, [baseWidth, baseHeight]);
+  }, []);
 
-  return { containerRef, ...size };
-}
-
-export default function IconCloud({ images, width = 400, height = 400 }: IconCloudProps) {
-  const {
-    containerRef,
-    width: resolvedWidth,
-    height: resolvedHeight,
-  } = useResponsiveSize(width, height);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [iconPositions, setIconPositions] = useState<Icon[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
-  const [mousePos, setMousePos] = useState({ x: width / 2, y: height / 2 });
-  const [targetRotation, setTargetRotation] = useState<{
-    x: number;
-    y: number;
-    startX: number;
-    startY: number;
-    distance: number;
-    startTime: number;
-    duration: number;
-  } | null>(null);
-
-  const animationFrameRef = useRef<number>(0);
-  const rotationRef = useRef({ x: 0, y: 0 });
-  const iconCanvasesRef = useRef<HTMLCanvasElement[]>([]);
-  const imagesLoadedRef = useRef<boolean[]>([]);
-
-  // Keep idle rotation centered on initial render and when size changes.
   useEffect(() => {
-    setMousePos({ x: width / 2, y: height / 2 });
-  }, [width, height]);
+    let cancelled = false;
+    state.loadedImages = images.map(() => null);
+    state.sprites = images.map(() => null);
 
-  const scaleFactor = resolvedWidth / (width || 400);
-  // Larger icons on PC (scaleFactor >= 1), bigger minimum size on mobile
-  const iconSize = Math.round(90 * Math.max(0.75, scaleFactor * 1.3));
-  const iconRadius = iconSize / 2;
-  // Slower rotation on mobile (smaller screens)
-  const isMobile = resolvedWidth < 600;
-
-  // Create icon canvases once when images change
-  useEffect(() => {
-    if (!images || images.length === 0) return;
-
-    imagesLoadedRef.current = Array.from({ length: images.length }, () => false);
-
-    const newIconCanvases = images.map((imageUrl, index) => {
-      const offscreen = document.createElement("canvas");
-      offscreen.width = iconSize;
-      offscreen.height = iconSize;
-      const offCtx = offscreen.getContext("2d");
-
-      if (offCtx) {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = imageUrl;
-        img.addEventListener(
-          "load",
-          () => {
-            offCtx.clearRect(0, 0, offscreen.width, offscreen.height);
-
-            // Draw the image slightly smaller (80% of size) with transparent background
-            const padding = iconSize * 0.1; // 10% padding on each side
-            offCtx.drawImage(img, padding, padding, iconSize - padding * 2, iconSize - padding * 2);
-
-            if (imagesLoadedRef.current) {
-              imagesLoadedRef.current[index] = true;
-            }
-          },
-          { once: true },
-        );
-      }
-      return offscreen;
+    images.forEach((imageUrl, index) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.addEventListener(
+        "load",
+        () => {
+          if (cancelled) return;
+          state.loadedImages[index] = img;
+          if (state.spritePx > 0) {
+            state.sprites[index] = createSprite(img, state.spritePx);
+          }
+        },
+        { once: true },
+      );
+      img.src = imageUrl;
     });
 
-    iconCanvasesRef.current = newIconCanvases;
+    return () => {
+      cancelled = true;
+    };
   }, [images]);
 
-  // Generate initial icon positions on a sphere (Fibonacci sphere)
+  // 表示サイズが変わったら読み込み済みのアイコンを作り直す
   useEffect(() => {
-    if (!images || images.length === 0) return;
-
-    const newIcons: Icon[] = [];
-    const numIcons = images.length;
-    // Use resolved (actual container) size for responsive sphere radius
-    const sphereRadius = Math.min(resolvedWidth, resolvedHeight) * 0.35;
-
-    const offset = 2 / numIcons;
-    const increment = Math.PI * (3 - Math.sqrt(5));
-
-    for (let i = 0; i < numIcons; i++) {
-      const y = i * offset - 1 + offset / 2;
-      const r = Math.sqrt(1 - y * y);
-      const phi = i * increment;
-
-      const x = Math.cos(phi) * r;
-      const z = Math.sin(phi) * r;
-
-      newIcons.push({
-        x: x * sphereRadius,
-        y: y * sphereRadius,
-        z: z * sphereRadius,
-        scale: 1,
-        opacity: 1,
-        id: i,
-      });
-    }
-    setIconPositions(newIcons);
-  }, [images, resolvedWidth, resolvedHeight]);
-
-  // Handle mouse events
-  const handleMouseDown = (e: MouseEvent) => {
-    const canvas = canvasRef.current;
-    const rect = canvas?.getBoundingClientRect();
-    if (!rect || !canvas) return;
-
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const rot = rotationRef.current ?? { x: 0, y: 0 };
-    iconPositions.forEach((icon) => {
-      const cosX = Math.cos(rot.x);
-      const sinX = Math.sin(rot.x);
-      const cosY = Math.cos(rot.y);
-      const sinY = Math.sin(rot.y);
-
-      const rotatedX = icon.x * cosY - icon.z * sinY;
-      const rotatedZ = icon.x * sinY + icon.z * cosY;
-      const rotatedY = icon.y * cosX + rotatedZ * sinX;
-
-      const screenX = canvas.width / 2 + rotatedX;
-      const screenY = canvas.height / 2 + rotatedY;
-
-      const scale = (rotatedZ + 200) / 300;
-      const clickRadius = iconRadius * scale;
-      const dx = x - screenX;
-      const dy = y - screenY;
-
-      if (dx * dx + dy * dy < clickRadius * clickRadius) {
-        const targetX = -Math.atan2(icon.y, Math.sqrt(icon.x * icon.x + icon.z * icon.z));
-        const targetY = Math.atan2(icon.x, icon.z);
-
-        const currentX = rot.x;
-        const currentY = rot.y;
-        const distance = Math.sqrt(
-          Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2),
-        );
-
-        const duration = Math.min(2000, Math.max(800, distance * 1000));
-
-        setTargetRotation({
-          x: targetX,
-          y: targetY,
-          startX: currentX,
-          startY: currentY,
-          distance,
-          startTime: performance.now(),
-          duration,
-        });
-        return;
-      }
+    if (spritePx === 0) return;
+    state.loadedImages.forEach((img, index) => {
+      if (img) state.sprites[index] = createSprite(img, spritePx);
     });
+  }, [spritePx]);
 
-    setIsDragging(true);
-    setLastMousePos({ x: e.clientX, y: e.clientY });
+  const toLocal = (e: MouseEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top, size: rect.width };
+  };
+
+  const handleMouseDown = (e: MouseEvent) => {
+    const local = toLocal(e);
+    if (!local) return;
+
+    const rotation = state.rotation;
+    const center = local.size / 2;
+    let hit: { point: Vec3; depth: number } | null = null;
+
+    for (const point of points) {
+      const projected = project(point, rotation);
+      const hitRadius = (local.size * ICON_SIZE_RATIO * depthScale(projected.depth)) / 2;
+      const dx = local.x - (center + projected.x * local.size * SPHERE_RADIUS_RATIO);
+      const dy = local.y - (center + projected.y * local.size * SPHERE_RADIUS_RATIO);
+      const isInside = dx * dx + dy * dy < hitRadius * hitRadius;
+      if (isInside && (!hit || projected.depth > hit.depth)) {
+        hit = { point, depth: projected.depth };
+      }
+    }
+
+    if (hit) {
+      const { point } = hit;
+      const targetX = -Math.atan2(point.y, Math.hypot(point.x, point.z));
+      const targetY = Math.atan2(point.x, point.z);
+      const distance = Math.hypot(targetX - rotation.x, targetY - rotation.y);
+
+      state.target = {
+        x: targetX,
+        y: targetY,
+        startX: rotation.x,
+        startY: rotation.y,
+        startTime: performance.now(),
+        duration: Math.min(2000, Math.max(800, distance * 1000)),
+      };
+    }
+
+    state.drag = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseMove = (e: MouseEvent) => {
-    const canvas = canvasRef.current;
-    const rect = canvas?.getBoundingClientRect();
-    if (rect && canvas) {
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const x = (e.clientX - rect.left) * scaleX;
-      const y = (e.clientY - rect.top) * scaleY;
-      setMousePos({ x, y });
+    const local = toLocal(e);
+    if (local) {
+      state.pointer = {
+        x: local.x / local.size - 0.5,
+        y: local.y / local.size - 0.5,
+      };
     }
 
-    if (isDragging) {
-      const deltaX = e.clientX - lastMousePos.x;
-      const deltaY = e.clientY - lastMousePos.y;
-
-      const prevRot = rotationRef.current ?? { x: 0, y: 0 };
-      rotationRef.current = {
-        x: prevRot.x + deltaY * 0.002,
-        y: prevRot.y + deltaX * 0.002,
+    const drag = state.drag;
+    if (drag) {
+      const rotation = state.rotation;
+      state.rotation = {
+        x: rotation.x + (e.clientY - drag.y) * DRAG_SPEED,
+        y: rotation.y + (e.clientX - drag.x) * DRAG_SPEED,
       };
-
-      setLastMousePos({ x: e.clientX, y: e.clientY });
+      state.drag = { x: e.clientX, y: e.clientY };
     }
   };
 
   const handleMouseUp = () => {
-    setIsDragging(false);
+    state.drag = null;
   };
 
-  // Animation and rendering
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
+    if (!canvas || !ctx || size === 0) return;
+
+    let frame = 0;
 
     const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // 以降は CSS px の座標系で描く
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size, size);
 
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-      const maxDistance = Math.sqrt(centerX * centerX + centerY * centerY);
-      const dx = mousePos.x - centerX;
-      const dy = mousePos.y - centerY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      // Slower rotation on mobile
-      const baseSpeed = isMobile ? 0.0015 : 0.003;
-      const speedMultiplier = isMobile ? 0.005 : 0.01;
-      const speed = baseSpeed + (distance / maxDistance) * speedMultiplier;
-
-      if (targetRotation) {
-        const elapsed = performance.now() - targetRotation.startTime;
-        const progress = Math.min(1, elapsed / targetRotation.duration);
-        const easedProgress = easeOutCubic(progress);
-
-        rotationRef.current = {
-          x: targetRotation.startX + (targetRotation.x - targetRotation.startX) * easedProgress,
-          y: targetRotation.startY + (targetRotation.y - targetRotation.startY) * easedProgress,
+      const target = state.target;
+      if (target) {
+        const progress = Math.min(1, (performance.now() - target.startTime) / target.duration);
+        const eased = easeOutCubic(progress);
+        state.rotation = {
+          x: target.startX + (target.x - target.startX) * eased,
+          y: target.startY + (target.y - target.startY) * eased,
         };
-
-        if (progress >= 1) {
-          setTargetRotation(null);
-        }
-      } else if (!isDragging) {
-        const rotation = rotationRef.current ?? { x: 0, y: 0 };
-        rotationRef.current = {
-          x: rotation.x + (dy / canvas.height) * speed,
-          y: rotation.y + (dx / canvas.width) * speed,
+        if (progress >= 1) state.target = null;
+      } else if (!state.drag) {
+        const pointer = state.pointer;
+        const distance = Math.hypot(pointer.x, pointer.y);
+        const speed = BASE_SPEED + (distance / MAX_POINTER_DISTANCE) * POINTER_SPEED;
+        const rotation = state.rotation;
+        state.rotation = {
+          x: rotation.x + pointer.y * speed,
+          y: rotation.y + pointer.x * speed,
         };
       }
 
-      // Sort icons by z-depth for proper rendering order
-      const rotation = rotationRef.current ?? { x: 0, y: 0 };
-      const sortedIcons = iconPositions.map((icon) => {
-        const cosX = Math.cos(rotation.x);
-        const sinX = Math.sin(rotation.x);
-        const cosY = Math.cos(rotation.y);
-        const sinY = Math.sin(rotation.y);
+      const rotation = state.rotation;
+      const center = size / 2;
+      const projected = points
+        .map((point, id) => ({ id, ...project(point, rotation) }))
+        .toSorted((a, b) => a.depth - b.depth);
 
-        const rotatedX = icon.x * cosY - icon.z * sinY;
-        const rotatedZ = icon.x * sinY + icon.z * cosY;
-        const rotatedY = icon.y * cosX + rotatedZ * sinX;
+      for (const icon of projected) {
+        const drawSize = iconSize * depthScale(icon.depth);
+        const cx = center + icon.x * radius;
+        const cy = center + icon.y * radius;
+        const sprite = state.sprites[icon.id];
 
-        return {
-          x: icon.x,
-          y: icon.y,
-          z: icon.z,
-          scale: icon.scale,
-          opacity: icon.opacity,
-          id: icon.id,
-          rotatedX,
-          rotatedY,
-          rotatedZ,
-        };
-      });
-
-      sortedIcons.sort((a, b) => a.rotatedZ - b.rotatedZ);
-
-      sortedIcons.forEach((icon) => {
-        const scale = (icon.rotatedZ + 200) / 300;
-        const opacity = Math.max(0.2, Math.min(1, (icon.rotatedZ + 150) / 200));
-
-        ctx.save();
-        ctx.translate(canvas.width / 2 + icon.rotatedX, canvas.height / 2 + icon.rotatedY);
-        ctx.scale(scale, scale);
-        ctx.globalAlpha = opacity;
-
-        const iconCanvases = iconCanvasesRef.current ?? [];
-        const imagesLoaded = imagesLoadedRef.current ?? [];
-        if (iconCanvases[icon.id] && imagesLoaded[icon.id]) {
-          ctx.drawImage(iconCanvases[icon.id], -iconRadius, -iconRadius, iconSize, iconSize);
+        ctx.globalAlpha = depthOpacity(icon.depth);
+        if (sprite) {
+          ctx.drawImage(sprite, cx - drawSize / 2, cy - drawSize / 2, drawSize, drawSize);
         } else {
-          // Fallback: show a placeholder circle while loading
+          // 読み込み中は円で代用する
           ctx.beginPath();
-          ctx.arc(0, 0, iconRadius - 4, 0, Math.PI * 2);
+          ctx.arc(cx, cy, drawSize * 0.4, 0, Math.PI * 2);
           ctx.fillStyle = "#3f3f46";
           ctx.fill();
         }
+      }
+      ctx.globalAlpha = 1;
 
-        ctx.restore();
-      });
-
-      animationFrameRef.current = requestAnimationFrame(animate);
+      frame = requestAnimationFrame(animate);
     };
 
     animate();
 
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [images, iconPositions, isDragging, mousePos, targetRotation, isMobile]);
+    return () => cancelAnimationFrame(frame);
+  }, [points, size, dpr, radius, iconSize]);
 
   return (
-    <div ref={containerRef} class="w-full aspect-square mx-auto" style={{ maxWidth: `${width}px` }}>
+    <div ref={containerRef} class="w-full aspect-square">
       <canvas
         ref={canvasRef}
-        width={resolvedWidth}
-        height={resolvedHeight}
+        width={Math.round(size * dpr)}
+        height={Math.round(size * dpr)}
         onMouseDown={handleMouseDown as unknown as () => void}
         onMouseMove={handleMouseMove as unknown as () => void}
         onMouseUp={handleMouseUp}

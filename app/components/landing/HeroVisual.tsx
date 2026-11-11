@@ -2,43 +2,50 @@ import IconCloud from "../../islands/IconCloud";
 
 interface HeroVisualProps {
   techIcons: string[];
-  cloudSize: number;
   gradientIdPrefix: string;
+  /**
+   * 球を描く正方形の一辺を決める幅のクラス。本はその下に続くので、
+   * 全体の高さは一辺のおよそ 1.1〜1.15 倍になる。
+   */
   className?: string;
+  /** 本の幅。球の正方形に対する比率で指定する */
   bookWidthClass?: string;
-  cloudOffsetClass?: string;
-  bookBottomClass?: string;
+  /** 背景の明暗。dark では球の後ろに光彩を置き、本の影を濃くする */
+  tone?: "light" | "dark";
 }
 
 export function HeroVisual({
   techIcons,
-  cloudSize,
   gradientIdPrefix,
-  className = "",
+  className = "w-full",
   bookWidthClass = "w-[72%]",
-  cloudOffsetClass = "",
-  bookBottomClass = "bottom-8",
+  tone = "light",
 }: HeroVisualProps) {
   const coverGradId = `${gradientIdPrefix}-cover-grad`;
   const pageGradLeftId = `${gradientIdPrefix}-page-grad-left`;
   const pageGradRightId = `${gradientIdPrefix}-page-grad-right`;
+  const isDark = tone === "dark";
 
   return (
-    <div class={`min-w-0 items-center justify-center relative ${className}`}>
-      <div
-        class={`min-w-0 relative z-10 w-full flex items-center justify-center overflow-hidden ${cloudOffsetClass}`}
-      >
-        <IconCloud images={techIcons} width={cloudSize} height={cloudSize} />
+    <div class={`relative mx-auto ${className}`}>
+      {isDark && (
+        <div class="absolute top-[6%] left-[6%] w-[88%] aspect-square bg-zinc-800/20 rounded-full blur-3xl" />
+      )}
+
+      <div class="relative z-10">
+        <IconCloud images={techIcons} />
       </div>
 
-      <div
-        class={`absolute ${bookBottomClass} left-1/2 -translate-x-1/2 z-0 opacity-90 ${bookWidthClass}`}
-      >
+      {/*
+        球の下端（アイコン込みで正方形の約 91%）のすぐ下に本のページが来るよう、
+        正方形の下の余白ぶんだけ引き上げる。% のマージンは幅基準なので球と一緒に伸縮する。
+      */}
+      <div class={`relative z-0 mx-auto -mt-[12%] opacity-90 ${bookWidthClass}`}>
         <svg
           viewBox="0 0 440 140"
           xmlns="http://www.w3.org/2000/svg"
           class="w-full"
-          style={{ filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.15))" }}
+          style={{ filter: `drop-shadow(0 20px 40px rgba(0,0,0,${isDark ? 0.6 : 0.15}))` }}
         >
           <title>開いた本のイラスト</title>
           <defs>
