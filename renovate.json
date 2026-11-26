@@ -1,15 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "timezone": "Asia/Tokyo",
+  "extends": ["github>teamony-labs/renovate-config"],
   "baseBranchPatterns": ["staging"],
-  "schedule": ["before 9am on monday"],
-  "minimumReleaseAge": "3 days",
-  "internalChecksFilter": "strict",
   "prCreation": "not-pending",
   "rebaseWhen": "behind-base-branch",
-  "dependencyDashboard": true,
-  "labels": ["dependencies"],
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 9am on monday"]
