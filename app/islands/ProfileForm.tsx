@@ -84,7 +84,7 @@ export default function ProfileForm({
             ユーザーID
           </label>
           <div class="flex rounded-xl shadow-sm ring-1 ring-zinc-200 overflow-hidden">
-            <span class="inline-flex items-center px-4 border-r border-zinc-200 bg-zinc-50 text-zinc-500 text-sm font-medium">
+            <span class="inline-flex shrink-0 items-center whitespace-nowrap px-4 border-r border-zinc-200 bg-zinc-50 text-zinc-500 text-sm font-medium">
               gidoku.com/user/
             </span>
             <input
@@ -92,7 +92,7 @@ export default function ProfileForm({
               id="username"
               value={username}
               onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
-              class="w-full px-3 py-2 rounded-none border-0 focus:ring-0 bg-white focus:outline-none text-zinc-900"
+              class="w-full min-w-0 px-3 py-2 rounded-none border-0 focus:ring-0 bg-white focus:outline-none text-zinc-900"
             />
           </div>
         </div>

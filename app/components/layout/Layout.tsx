@@ -18,7 +18,7 @@ export const Layout: FC<PropsWithChildren<LayoutProps>> = ({
   children,
   user,
   title,
-  sidebarExpanded = false,
+  sidebarExpanded = true,
   appShell,
   showSidebar,
   showLogout,
