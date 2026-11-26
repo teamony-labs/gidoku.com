@@ -45,8 +45,8 @@ export async function requirePageAuth(c: Context): Promise<User | Response> {
 export function getSidebarExpanded(c: Context): boolean {
   try {
     const value = getCookie(c, "sidebar_expanded");
-    return value === "true";
+    return value !== "false";
   } catch {
-    return false;
+    return true;
   }
 }
