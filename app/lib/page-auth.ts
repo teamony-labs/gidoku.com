@@ -40,8 +40,7 @@ export async function requirePageAuth(c: Context): Promise<User | Response> {
 }
 
 /**
- * サイドバーの展開状態を Cookie から取得する。cookie がない（一度も開閉していない）ときは開いて表示し、
- * 自分で閉じた人（cookie が "false"）だけ閉じて表示する。
+ * サイドバーの展開状態を Cookie から取得
  */
 export function getSidebarExpanded(c: Context): boolean {
   try {
