@@ -24,7 +24,7 @@
     "db:console:prod": "wrangler d1 execute gidoku-db --remote --command"
   },
   "dependencies": {
-    "@lordicon/element": "^2.0.1",
+    "@lordicon/element": "^3.0.0",
     "arktype": "^2.0.0-rc.19",
     "hono": "^4.10.7",
     "honox": "^0.1.51",
