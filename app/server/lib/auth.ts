@@ -108,7 +108,10 @@ export async function authMiddleware(
 /**
  * オプショナル認証ミドルウェア（キャッシュ対応）
  */
-export async function optionalAuthMiddleware(c: Context<HonoContext>, next: Next): Promise<void> {
+export async function optionalAuthMiddleware<P extends string>(
+  c: Context<HonoContext, P>,
+  next: Next,
+): Promise<void> {
   try {
     // レート制限ミドルウェアが同一セッションを検証済みならそれを再利用し、
     // KVへの重複読み込みを避ける
