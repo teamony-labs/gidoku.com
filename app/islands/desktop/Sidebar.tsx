@@ -8,7 +8,7 @@ interface SidebarProps {
   showLogout?: boolean;
 }
 
-export default function Sidebar({ initialExpanded = false, showLogout = true }: SidebarProps) {
+export default function Sidebar({ initialExpanded = true, showLogout = true }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
 
   const navItems = [
