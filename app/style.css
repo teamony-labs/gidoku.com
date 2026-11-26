@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* 英数字は Lexend、和文は Noto Sans JP で表示する（_renderer.tsx で Google Fonts から読み込む） */
 @theme {
   --font-sans: "Lexend", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
 }
